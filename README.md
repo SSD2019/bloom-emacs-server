@@ -19,8 +19,8 @@ A lightweight, zero-dependency HTTP/JSON server inside Emacs for the [Bloom](htt
 (setq bloom-server-host "0.0.0.0")
 (setq bloom-server-port 8765)
 
-;; Whitelist localhost and your Android device's WireGuard IP
-(setq bloom-server-allowed-hosts '("127.0.0.1" "10.0.0.2"))
+;; Only allow the server to start on whitelisted machine hostnames
+(setq bloom-server-allowed-hosts '("AMDdesktop"))
 
 (bloom-server-start)
 ```
@@ -30,3 +30,4 @@ A lightweight, zero-dependency HTTP/JSON server inside Emacs for the [Bloom](htt
 ```bash
 emacs --batch -Q -L . -l ert -l bloom-server -l bloom-server-test -f ert-run-tests-batch-and-exit
 ```
+

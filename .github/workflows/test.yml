@@ -16,3 +16,4 @@ jobs:
           version: 29.4
       - name: Run ERT tests
         run: emacs --batch -Q -L . -l ert -l bloom-server -l bloom-server-test -f ert-run-tests-batch-and-exit
+

@@ -75,11 +75,14 @@
                    ["work" "home" "urgent" "reading"]))))
 
 (ert-deftest bloom-server-test-whitelisted-hosts ()
-  (let ((bloom-server-allowed-hosts '("127.0.0.1" "10.0.0.2")))
-    (should (bloom-server--host-allowed-p "127.0.0.1"))
-    (should (bloom-server--host-allowed-p "10.0.0.2"))
-    (should-not (bloom-server--host-allowed-p "10.0.0.3"))
-    (should-not (bloom-server--host-allowed-p nil))))
+  (let ((bloom-server-allowed-hosts '("AMDdesktop")))
+    (should (bloom-server--host-allowed-p "AMDdesktop"))
+    (should (bloom-server--host-allowed-p "amddesktop"))
+    (should (bloom-server--host-allowed-p "AMDdesktop.local"))
+    (should-not (bloom-server--host-allowed-p "laptop")))
+  (let ((bloom-server-allowed-hosts nil))
+    (should-not (bloom-server--host-allowed-p "AMDdesktop"))
+    (should-not (bloom-server-start))))
 
 (provide 'bloom-server-test)
 ;;; bloom-server-test.el ends here
