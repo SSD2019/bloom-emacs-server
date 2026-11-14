@@ -120,10 +120,11 @@ Signals an error if REL-PATH attempts path traversal outside the root."
   (dolist (entry (directory-files-and-attributes dir nil nil t))
     (let* ((name (car entry))
            (attrs (cdr entry))
-           (is-dir (eq t (file-attribute-type attrs))))
+           (abs (expand-file-name name dir))
+           (is-dir (or (eq t (file-attribute-type attrs))
+                       (file-directory-p abs))))
       (unless (member name '("." ".."))
-        (let* ((abs (expand-file-name name dir))
-               (next-parts (append rel-parts (list name)))
+        (let* ((next-parts (append rel-parts (list name)))
                (rel (string-join next-parts "/")))
           (cond
            (is-dir
@@ -173,7 +174,9 @@ Signals an error if REL-PATH attempts path traversal outside the root."
         (let ((inhibit-read-only t)
               (pt (point)))
           (revert-buffer t t t)
-          (goto-char (min pt (point-max))))))))
+          (goto-char (min pt (point-max)))
+          (when (derived-mode-p 'org-mode)
+            (ignore-errors (org-show-context 'link-search))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Org Configuration Serialization
@@ -377,7 +380,7 @@ Signals an error if REL-PATH attempts path traversal outside the root."
            (headers (format "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"
                             status-text content-type (string-bytes payload))))
       (process-send-string proc (concat (encode-coding-string headers 'raw-text) payload))
-      (delete-process proc))))
+      (process-send-eof proc))))
 
 (defun bloom-server--send-json (proc status alist)
   "Send ALIST encoded as UTF-8 JSON on PROC with HTTP STATUS."
@@ -394,9 +397,11 @@ Signals an error if REL-PATH attempts path traversal outside the root."
   "Parse URL QUERY-STR into an alist of `(key . value)' strings."
   (when (and query-str (not (string-empty-p query-str)))
     (mapcar (lambda (pair)
-              (let ((parts (split-string pair "=")))
-                (cons (url-unhex-string (car parts) t)
-                      (url-unhex-string (or (cadr parts) "") t))))
+              (let ((eq-idx (string-match "=" pair)))
+                (if eq-idx
+                    (cons (url-unhex-string (substring pair 0 eq-idx) t)
+                          (url-unhex-string (substring pair (1+ eq-idx)) t))
+                  (cons (url-unhex-string pair t) ""))))
             (split-string query-str "&" t))))
 
 ;; ---------------------------------------------------------------------------
@@ -407,10 +412,11 @@ Signals an error if REL-PATH attempts path traversal outside the root."
   "Dispatch one HTTP request on PROC."
   (condition-case err
       (let* ((url (url-generic-parse-url raw-target))
-             (path (url-unhex-string (or (url-filename url) "/")))
-             (q-idx (string-match "\\?" path))
-             (route (if q-idx (substring path 0 q-idx) path))
-             (query-str (when q-idx (substring path (1+ q-idx))))
+             (raw-path (or (url-filename url) "/"))
+             (q-idx (string-match "\\?" raw-path))
+             (raw-route (if q-idx (substring raw-path 0 q-idx) raw-path))
+             (route (url-unhex-string raw-route))
+             (query-str (when q-idx (substring raw-path (1+ q-idx))))
              (params (bloom-server--parse-query query-str))
              (q-path (cdr (assoc "path" params)))
              (q-dir (cdr (assoc "dir" params))))
@@ -445,11 +451,13 @@ Signals an error if REL-PATH attempts path traversal outside the root."
               (dolist (entry (directory-files-and-attributes dir nil nil t))
                 (let* ((name (car entry))
                        (attrs (cdr entry))
-                       (is-dir (eq t (file-attribute-type attrs))))
+                       (abs-entry (expand-file-name name dir))
+                       (is-dir (or (eq t (file-attribute-type attrs))
+                                   (file-directory-p abs-entry))))
                   (when (and (not is-dir)
                              (not (string-prefix-p "." name)))
                     (push (bloom-server--file-entry
-                           (expand-file-name name dir)
+                           abs-entry
                            (concat prefix name))
                           entries)))))
             (bloom-server--send-json proc 200 `((files . ,(vconcat (nreverse entries)))))))
@@ -547,12 +555,14 @@ Signals an error if REL-PATH attempts path traversal outside the root."
               (dolist (entry (directory-files-and-attributes abs nil nil t))
                 (let* ((name (car entry))
                        (attrs (cdr entry))
-                       (is-dir (eq t (file-attribute-type attrs))))
+                       (abs-entry (expand-file-name name abs))
+                       (is-dir (or (eq t (file-attribute-type attrs))
+                                   (file-directory-p abs-entry))))
                   (unless (member name '("." ".."))
                     (if is-dir
                         (push name subdirs)
                       (push (bloom-server--file-entry
-                             (expand-file-name name abs)
+                             abs-entry
                              (concat prefix name))
                             files))))))
             (bloom-server--send-json
@@ -676,7 +686,7 @@ Signals an error if REL-PATH attempts path traversal outside the root."
 
 (defun bloom-server--host-allowed-p (&optional hostname)
   "Return non-nil if HOSTNAME (default `(system-name)') is in `bloom-server-allowed-hosts'."
-  (let* ((raw (or hostname (system-name)))
+  (let* ((raw (or hostname (system-name) ""))
          (short (car (split-string raw "\\."))))
     (cl-some (lambda (allowed)
                (and (stringp allowed)

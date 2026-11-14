@@ -82,7 +82,28 @@
     (should-not (bloom-server--host-allowed-p "laptop")))
   (let ((bloom-server-allowed-hosts nil))
     (should-not (bloom-server--host-allowed-p "AMDdesktop"))
+    (should-not (bloom-server--host-allowed-p nil))
     (should-not (bloom-server-start))))
+
+(ert-deftest bloom-server-test-parse-query-special-chars ()
+  (let ((parsed (bloom-server--parse-query "path=Notes%20%26%20Ideas.org&other=tag%3Durgent.org&flag")))
+    (should (equal (cdr (assoc "path" parsed)) "Notes & Ideas.org"))
+    (should (equal (cdr (assoc "other" parsed)) "tag=urgent.org"))
+    (should (equal (cdr (assoc "flag" parsed)) ""))))
+
+(ert-deftest bloom-server-test-walk-follows-symlinked-directories ()
+  (let* ((tmp (make-temp-file "bloom-org-" t))
+         (real-dir (expand-file-name "real-sub" tmp))
+         (sym-dir (expand-file-name "sym-sub" tmp)))
+    (unwind-protect
+        (progn
+          (make-directory real-dir t)
+          (make-symbolic-link real-dir sym-dir)
+          (write-region "* Sub Note" nil (expand-file-name "note.org" real-dir) nil 'silent)
+          (let ((files (bloom-server--walk-vault tmp nil nil)))
+            (should (member "real-sub/note.org" (mapcar (lambda (f) (alist-get 'name f)) files)))
+            (should (member "sym-sub/note.org" (mapcar (lambda (f) (alist-get 'name f)) files)))))
+      (delete-directory tmp t))))
 
 (provide 'bloom-server-test)
 ;;; bloom-server-test.el ends here
